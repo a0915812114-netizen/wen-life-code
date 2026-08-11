@@ -8,9 +8,14 @@ import {
   Download,
   Image as ImageIcon,
   Briefcase,
-  Database,
   ShieldCheck,
   LockKeyhole,
+  Heart,
+  Compass,
+  Sparkles,
+  Users,
+  Target,
+  BookOpen,
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -26,6 +31,21 @@ import {
   onSnapshot,
   serverTimestamp,
 } from 'firebase/firestore';
+import {
+  numberProfiles,
+  ideologyGuide,
+  dailyPractices,
+  reminders,
+} from './data/numberProfiles';
+import {
+  buildLogEntry,
+  computeLifeCode,
+  loadLocalLogs,
+  logFingerprint,
+  mergeLogs,
+  saveLocalLog,
+} from './lib/queryLogs';
+import AdminDashboard from './components/AdminDashboard';
 
 function readGlobal(name) {
   try {
@@ -92,12 +112,21 @@ const App = () => {
   const [loginError, setLoginError] = useState(false);
   const [user, setUser] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [cloudLogs, setCloudLogs] = useState([]);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   const resultRef = useRef(null);
   const lastLoggedRef = useRef(null);
   const SECRET_KEY = 'gobbie403';
+
+  const refreshLocalLogs = () => {
+    const local = loadLocalLogs().map((item) => ({
+      ...item,
+      source: item.source || 'local',
+    }));
+    setLogs(mergeLogs(local, cloudLogs));
+  };
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -133,94 +162,61 @@ const App = () => {
     };
   }, []);
 
-  const reduce = (n) => (n === 0 ? 0 : n % 9 === 0 ? 9 : n % 9);
+  const r = useMemo(() => computeLifeCode(birthDate), [birthDate]);
 
-  const traitData = {
-    1: { title: '領袖型' },
-    2: { title: '溝通型' },
-    3: { title: '行動型' },
-    4: { title: '策劃型' },
-    5: { title: '方向型' },
-    6: { title: '智慧型' },
-    7: { title: '人際型' },
-    8: { title: '責任型' },
-    9: { title: '機會型' },
-  };
+  const profile = r ? numberProfiles[r.O] : null;
+  const ideology = profile ? ideologyGuide[profile.ideology] : null;
 
-  const r = useMemo(() => {
-    if (!birthDate) return null;
-    const [year, month, day] = birthDate.split('-');
-    const A = parseInt(day[0], 10) || 0;
-    const B = parseInt(day[1], 10) || 0;
-    const C = parseInt(month[0], 10) || 0;
-    const D = parseInt(month[1], 10) || 0;
-    const E = parseInt(year[0], 10) || 0;
-    const F = parseInt(year[1], 10) || 0;
-    const G = parseInt(year[2], 10) || 0;
-    const H = parseInt(year[3], 10) || 0;
-    const I = reduce(A + B);
-    const J = reduce(C + D);
-    const K = reduce(E + F);
-    const L = reduce(G + H);
-    const M = reduce(I + J);
-    const N = reduce(K + L);
-    const O = reduce(M + N);
-    const P = reduce(M + O);
-    const Q = reduce(N + O);
-    const R = reduce(P + Q);
-    const X = reduce(I + M);
-    const W = reduce(J + M);
-    const S = reduce(X + W);
-    const V = reduce(K + N);
-    const U = reduce(L + N);
-    const T = reduce(V + U);
-    const outerHeart = reduce(S + R + T);
-    let outerHeartType =
-      outerHeart === 3
-        ? '理想主義者'
-        : outerHeart === 6
-          ? '現實主義者'
-          : outerHeart === 9
-            ? '遠見主義者'
-            : '多樣價值觀';
-    return {
-      A,
-      B,
-      C,
-      D,
-      E,
-      F,
-      G,
-      H,
-      I,
-      J,
-      K,
-      L,
-      M,
-      N,
-      O,
-      P,
-      Q,
-      R,
-      S,
-      T,
-      X,
-      W,
-      V,
-      U,
-      motivation: M,
-      energy: N,
-      subconscious: reduce(O + I + L),
-      innerHeart: reduce(O + M + N),
-      outerHeart,
-      outerHeartType,
-    };
-  }, [birthDate]);
-
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setIsConfirming(true);
     setBirthDate(tempBirthDate);
     setUserName(tempUserName);
+
+    const result = computeLifeCode(tempBirthDate);
+    if (result) {
+      const logKey = `${tempUserName || '未填寫'}-${tempBirthDate}-${result.O}`;
+      if (lastLoggedRef.current !== logKey) {
+        lastLoggedRef.current = logKey;
+        const entry = buildLogEntry({
+          name: tempUserName,
+          dob: tempBirthDate,
+          result,
+        });
+        saveLocalLog(entry);
+        refreshLocalLogs();
+
+        if (firebaseReady && db && auth) {
+          try {
+            if (!auth.currentUser) {
+              await signInAnonymously(auth);
+            }
+            await addDoc(
+              collection(db, 'artifacts', appId, 'public', 'data', 'analysis_logs'),
+              {
+                timestamp: serverTimestamp(),
+                createdAt: entry.createdAt,
+                dedupeKey: entry.dedupeKey,
+                name: entry.name,
+                dob: entry.dob,
+                mainChar: entry.mainChar,
+                archetype: entry.archetype,
+                ideology: entry.ideology,
+                outerChar: entry.outerChar,
+                innerChar: entry.innerChar,
+                guardingCode: entry.guardingCode,
+                careerCode: entry.careerCode,
+                outerHeartType: entry.outerHeartType,
+                motivation: entry.motivation,
+                energy: entry.energy,
+              },
+            );
+          } catch (err) {
+            console.error('雲端紀錄失敗:', err);
+          }
+        }
+      }
+    }
+
     setTimeout(() => setIsConfirming(false), 800);
   };
 
@@ -246,33 +242,15 @@ const App = () => {
   };
 
   useEffect(() => {
-    const logAnalysis = async () => {
-      const logKey = `${userName}-${birthDate}`;
-      if (!firebaseReady || !db || !user || !r || lastLoggedRef.current === logKey)
-        return;
-      try {
-        lastLoggedRef.current = logKey;
-        await addDoc(
-          collection(db, 'artifacts', appId, 'public', 'data', 'analysis_logs'),
-          {
-            timestamp: serverTimestamp(),
-            name: userName || '未填寫',
-            dob: birthDate,
-            mainChar: r.O,
-            outerChar: `${r.I}${r.J}${r.M}`,
-            innerChar: `${r.K}${r.L}${r.N}`,
-            guardingCode: `${r.M}${r.N}${r.O}`,
-          },
-        );
-      } catch (err) {
-        console.error('紀錄失敗:', err);
-      }
-    };
-    if (user && r) logAnalysis();
-  }, [birthDate, userName, user, r]);
+    const local = loadLocalLogs().map((item) => ({
+      ...item,
+      source: item.source || 'local',
+    }));
+    setLogs(mergeLogs(local, cloudLogs));
+  }, [cloudLogs]);
 
   useEffect(() => {
-    if (!firebaseReady || !db || !user || view !== 'admin') return;
+    if (!firebaseReady || !db || view !== 'admin') return;
     const q = collection(
       db,
       'artifacts',
@@ -284,24 +262,30 @@ const App = () => {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setLogs(
-          data.sort(
-            (a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0),
-          ),
-        );
+        const data = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const item = {
+            id: docSnap.id,
+            ...d,
+            source: 'firebase',
+            createdAt:
+              d.createdAt ||
+              (d.timestamp?.seconds ? d.timestamp.seconds * 1000 : Date.now()),
+          };
+          item.dedupeKey = d.dedupeKey || logFingerprint(item);
+          return item;
+        });
+        setCloudLogs(data);
       },
       (err) => console.error('監聽失敗:', err),
     );
     return () => unsubscribe();
-  }, [user, view]);
+  }, [view]);
 
   const handleAdminAuth = (e) => {
     e.preventDefault();
     if (adminPassword === SECRET_KEY) {
+      refreshLocalLogs();
       setView('admin');
       setLoginError(false);
     } else {
@@ -349,78 +333,15 @@ const App = () => {
 
   if (view === 'admin')
     return (
-      <div className="min-h-screen bg-[#FDFCF8] p-6 md:p-12 font-serif text-black ink-paper">
-        <div className="max-w-7xl mx-auto">
-          <header className="flex justify-between items-center mb-8 bg-white p-6 rounded-3xl border-2 border-slate-800 ink-card shadow-lg">
-            <div className="flex items-center gap-4">
-              <div className="bg-black text-white p-3 rounded-2xl">
-                <Database size={24} />
-              </div>
-              <h2 className="text-2xl font-black text-slate-800">紀錄管理</h2>
-            </div>
-            <button
-              onClick={() => {
-                setView('user');
-                setAdminPassword('');
-              }}
-              className="px-6 py-3 bg-black text-white rounded-full font-bold shadow-md"
-            >
-              返回首頁
-            </button>
-          </header>
-          {!firebaseReady && (
-            <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50 px-6 py-4 text-sm font-bold text-amber-800">
-              尚未設定 Firebase（VITE_FIREBASE_CONFIG），管理後台目前無法讀取雲端紀錄。
-            </div>
-          )}
-          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden overflow-x-auto ink-card shadow-xl">
-            <table className="w-full text-left border-collapse min-w-[800px]">
-              <thead>
-                <tr className="bg-slate-100 text-slate-800 text-[11px] font-black uppercase tracking-[0.2em] border-b-2 border-slate-200">
-                  <th className="px-6 py-6 text-slate-500">時間</th>
-                  <th className="px-6 py-6">姓名</th>
-                  <th className="px-6 py-6">生日</th>
-                  <th className="px-6 py-6 text-center">主性格</th>
-                  <th className="px-6 py-6 text-center">外顯</th>
-                  <th className="px-6 py-6 text-center">內在</th>
-                  <th className="px-6 py-6 text-center">坐鎮</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-5 text-xs font-bold text-slate-400">
-                      {log.timestamp
-                        ? new Date(log.timestamp.seconds * 1000).toLocaleString(
-                            'zh-TW',
-                          )
-                        : '同步中'}
-                    </td>
-                    <td className="px-6 py-5 font-bold">{log.name}</td>
-                    <td className="px-6 py-5 text-slate-500 font-mono tracking-tighter">
-                      {log.dob}
-                    </td>
-                    <td className="px-6 py-5 text-center">
-                      <span className="bg-slate-100 text-black px-2 rounded font-black border border-slate-300">
-                        {log.mainChar}
-                      </span>
-                    </td>
-                    <td className="px-6 py-5 text-center font-bold">
-                      {log.outerChar}
-                    </td>
-                    <td className="px-6 py-5 text-center font-bold">
-                      {log.innerChar}
-                    </td>
-                    <td className="px-6 py-5 text-center font-bold text-slate-600">
-                      {log.guardingCode}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <AdminDashboard
+        logs={logs}
+        firebaseReady={firebaseReady}
+        onBack={() => {
+          setView('user');
+          setAdminPassword('');
+        }}
+        onRefreshLocal={refreshLocalLogs}
+      />
     );
 
   return (
@@ -803,13 +724,34 @@ const App = () => {
                         {r.O}
                       </div>
                       <div className="text-xl font-black text-black mt-3 tracking-widest underline decoration-double decoration-slate-300">
-                        {traitData[r.O]?.title}
+                        {profile?.archetype}
                       </div>
+                      <p className="text-sm text-slate-500 font-bold mt-2 italic">
+                        {profile?.quote}
+                      </p>
                     </div>
                   </div>
                   <div className="w-full h-px bg-slate-200 my-4"></div>
                   <div className="text-[12px] text-slate-400 font-bold tracking-[0.5em] mb-4 uppercase">
                     主要性格能量
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center mb-4">
+                    {profile?.keywords?.map((k) => (
+                      <span
+                        key={k}
+                        className="px-3 py-1 bg-black text-white text-xs font-black tracking-widest rounded-full"
+                      >
+                        {k}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="bg-slate-50 p-5 rounded-2xl w-full border border-slate-100 flex justify-between items-center shadow-inner mb-3">
+                    <span className="text-slate-500 font-bold tracking-widest underline decoration-slate-200">
+                      世界觀
+                    </span>
+                    <span className="font-black text-black text-lg">
+                      {profile?.ideology}
+                    </span>
                   </div>
                   <div className="bg-slate-50 p-5 rounded-2xl w-full border border-slate-100 flex justify-between items-center shadow-inner">
                     <span className="text-slate-500 font-bold tracking-widest underline decoration-slate-200">
@@ -892,21 +834,222 @@ const App = () => {
                 </div>
               ))}
             </div>
+
+            {profile && (
+              <div className="w-full mt-16 space-y-10">
+                <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 border-b-2 border-slate-800 pb-6">
+                  <div>
+                    <p className="text-xs font-black tracking-[0.4em] text-slate-400 mb-2 uppercase">
+                      {profile.english}
+                    </p>
+                    <h3 className="text-3xl md:text-4xl font-black tracking-[0.15em]">
+                      {r.O} 號人 · {profile.archetype}深度解析
+                    </h3>
+                  </div>
+                  <p className="text-slate-500 font-bold italic max-w-xl">
+                    {profile.quote}
+                  </p>
+                </div>
+
+                <section className="bg-white border-2 border-slate-800 rounded-3xl p-8 md:p-10 ink-card">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="bg-black text-white p-2 rounded-xl">
+                      <BookOpen size={18} />
+                    </div>
+                    <h4 className="text-xl font-black tracking-widest">核心人格</h4>
+                  </div>
+                  <p className="text-lg leading-relaxed text-slate-700 font-medium">
+                    {profile.core}
+                  </p>
+                </section>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <section className="bg-emerald-50 border-2 border-emerald-200 rounded-3xl p-8 ink-card">
+                    <div className="flex items-center gap-3 mb-5">
+                      <Sparkles className="text-emerald-700" size={22} />
+                      <h4 className="text-xl font-black tracking-widest text-emerald-900">
+                        高能量 · 天賦發光時
+                      </h4>
+                    </div>
+                    <ul className="space-y-3">
+                      {profile.high.map((item) => (
+                        <li
+                          key={item}
+                          className="flex items-start gap-3 text-slate-800 font-bold"
+                        >
+                          <span className="mt-1 w-2 h-2 rounded-full bg-emerald-600 flex-shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                  <section className="bg-rose-50 border-2 border-rose-200 rounded-3xl p-8 ink-card">
+                    <div className="flex items-center gap-3 mb-5">
+                      <Target className="text-rose-700" size={22} />
+                      <h4 className="text-xl font-black tracking-widest text-rose-900">
+                        低能量 · 卡住的時候
+                      </h4>
+                    </div>
+                    <ul className="space-y-3">
+                      {profile.low.map((item) => (
+                        <li
+                          key={item}
+                          className="flex items-start gap-3 text-slate-800 font-bold"
+                        >
+                          <span className="mt-1 w-2 h-2 rounded-full bg-rose-500 flex-shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <section className="bg-white border-2 border-slate-200 rounded-3xl p-8 ink-card">
+                    <div className="flex items-center gap-3 mb-5">
+                      <Briefcase size={20} />
+                      <h4 className="text-lg font-black tracking-widest">天賦職場</h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.careers.map((c) => (
+                        <span
+                          key={c}
+                          className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                  <section className="bg-white border-2 border-slate-200 rounded-3xl p-8 ink-card">
+                    <div className="flex items-center gap-3 mb-5">
+                      <Users size={20} />
+                      <h4 className="text-lg font-black tracking-widest">相處之道</h4>
+                    </div>
+                    <ul className="space-y-3 mb-5">
+                      {profile.relate.map((item) => (
+                        <li key={item} className="font-bold text-slate-700">
+                          · {item}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="bg-black text-white rounded-2xl px-4 py-3 text-sm font-black tracking-wider">
+                      一句話：{profile.oneLiner}
+                    </div>
+                  </section>
+                  <section className="bg-white border-2 border-slate-200 rounded-3xl p-8 ink-card">
+                    <div className="flex items-center gap-3 mb-5">
+                      <Compass size={20} />
+                      <h4 className="text-lg font-black tracking-widest">職場識別口吻</h4>
+                    </div>
+                    <p className="text-2xl font-black text-[#B22222] leading-relaxed">
+                      {profile.workplaceCue}
+                    </p>
+                  </section>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <section className="bg-slate-900 text-white rounded-3xl p-8 ink-card">
+                    <div className="flex items-center gap-3 mb-5">
+                      <Heart size={20} />
+                      <h4 className="text-lg font-black tracking-widest">
+                        修行課題 · {profile.heart.name}
+                      </h4>
+                    </div>
+                    <p className="text-xl font-black mb-4 tracking-wide">
+                      {profile.practice}
+                    </p>
+                    <p className="text-amber-300 font-bold mb-3">
+                      {profile.heart.mantra}
+                    </p>
+                    <p className="text-slate-300 leading-relaxed font-medium">
+                      {profile.heart.why}
+                    </p>
+                  </section>
+                  {ideology && (
+                    <section className="bg-white border-2 border-slate-800 rounded-3xl p-8 ink-card">
+                      <div className="flex items-center gap-3 mb-5">
+                        <Compass size={20} />
+                        <h4 className="text-lg font-black tracking-widest">
+                          三大主義 · {profile.ideology}
+                        </h4>
+                      </div>
+                      <p className="text-sm font-black tracking-[0.3em] text-slate-400 mb-2">
+                        對應數字 {ideology.numbers}
+                      </p>
+                      <p className="text-xl font-black mb-3">{ideology.focus}</p>
+                      <p className="text-slate-600 font-medium leading-relaxed">
+                        {ideology.desc}
+                      </p>
+                    </section>
+                  )}
+                </div>
+
+                <section className="bg-[#FDFCF8] border-2 border-dashed border-slate-300 rounded-3xl p-8 md:p-10">
+                  <h4 className="text-xl font-black tracking-widest mb-6">
+                    每天三分鐘，把修行變習慣
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    {dailyPractices.map((item, idx) => (
+                      <div
+                        key={item.title}
+                        className="bg-white rounded-2xl p-5 border border-slate-200"
+                      >
+                        <div className="text-xs font-black text-slate-400 tracking-[0.3em] mb-2">
+                          0{idx + 1}
+                        </div>
+                        <div className="font-black text-lg mb-2">{item.title}</div>
+                        <p className="text-sm text-slate-600 font-medium leading-relaxed">
+                          {item.desc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-center font-black text-lg tracking-wide">
+                    這週給自己一句：我要練習「
+                    <span className="text-[#B22222]">{profile.heart.name}</span>
+                    」。
+                  </p>
+                </section>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {reminders.map((item) => (
+                    <div
+                      key={item.title}
+                      className="bg-white border border-slate-200 rounded-2xl p-6 ink-card"
+                    >
+                      <div className="font-black mb-2 tracking-widest">
+                        {item.title}
+                      </div>
+                      <p className="text-sm text-slate-600 font-medium">
+                        {item.desc}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        <footer className="mt-20 text-center pb-16 opacity-50 flex flex-col items-center gap-6">
-          <p className="text-[12px] font-black text-slate-500 tracking-[1em] uppercase">
-            生命靈數精要 ‧ 墨跡傳承
+        <footer className="mt-20 text-center pb-20 flex flex-col items-center">
+          <p className="text-[12px] font-black text-slate-500 tracking-[1em] uppercase relative">
+            生命靈數精
+            <span className="relative inline-block">
+              要
+              {!isExporting && (
+                <button
+                  type="button"
+                  onClick={() => setView('login')}
+                  title="後台入口"
+                  className="absolute left-1/2 top-full mt-3 -translate-x-1/2 text-slate-400 hover:text-black transition-all p-2 border-2 border-transparent hover:border-black rounded-full"
+                >
+                  <ShieldCheck size={22} />
+                </button>
+              )}
+            </span>
+            {' '}‧ 墨跡傳承
           </p>
-          {!isExporting && (
-            <button
-              onClick={() => setView('login')}
-              className="text-slate-200 hover:text-black transition-all p-3 border-2 border-transparent hover:border-black rounded-full"
-            >
-              <ShieldCheck size={24} />
-            </button>
-          )}
         </footer>
       </div>
     </div>
