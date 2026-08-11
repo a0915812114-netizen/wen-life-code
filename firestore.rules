@@ -1,9 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 公開查詢紀錄：登入者可讀寫（含匿名登入）
+    // 公開查詢紀錄：允許建立與讀取（供線上彙整）
     match /artifacts/{appId}/public/data/analysis_logs/{docId} {
-      allow read, create: if request.auth != null;
+      allow create: if request.resource.data.keys().hasAll([
+        'name', 'dob', 'mainChar', 'createdAt'
+      ])
+      && request.resource.data.name is string
+      && request.resource.data.dob is string
+      && request.resource.data.mainChar is int;
+      allow read: if true;
       allow update, delete: if false;
     }
 

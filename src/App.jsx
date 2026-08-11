@@ -185,11 +185,8 @@ const App = () => {
         saveLocalLog(entry);
         refreshLocalLogs();
 
-        if (firebaseReady && db && auth) {
+        if (firebaseReady && db) {
           try {
-            if (!auth.currentUser) {
-              await signInAnonymously(auth);
-            }
             await addDoc(
               collection(db, 'artifacts', appId, 'public', 'data', 'analysis_logs'),
               {
@@ -198,7 +195,7 @@ const App = () => {
                 dedupeKey: entry.dedupeKey,
                 name: entry.name,
                 dob: entry.dob,
-                mainChar: entry.mainChar,
+                mainChar: Number(entry.mainChar),
                 archetype: entry.archetype,
                 ideology: entry.ideology,
                 outerChar: entry.outerChar,
@@ -206,8 +203,8 @@ const App = () => {
                 guardingCode: entry.guardingCode,
                 careerCode: entry.careerCode,
                 outerHeartType: entry.outerHeartType,
-                motivation: entry.motivation,
-                energy: entry.energy,
+                motivation: Number(entry.motivation),
+                energy: Number(entry.energy),
               },
             );
           } catch (err) {
