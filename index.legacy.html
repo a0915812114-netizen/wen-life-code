@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPI 天賦矩陣 - 完美校準版 v10.3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@400;600;700;900&display=swap');
+
+        :root {
+            --ink-black: #1a1a1a;
+            --ink-grey: #444444;
+            --cinnabar: #c92a2a;
+            --royal-purple: #6b21a8;
+            --forest-green: #14532d;
+            --paper-bg: #f9f7f0;
+            --gold: #d97706;
+        }
+
+        body {
+            font-family: 'Noto Serif TC', serif;
+            background-color: var(--paper-bg);
+            background-image: radial-gradient(#d1d5db 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: var(--ink-black);
+            overflow-x: hidden;
+            font-size: 16px;
+        }
+
+        .matrix-stage-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+            padding-top: 70px;
+            padding-bottom: 20px;
+        }
+
+        .matrix-stage {
+            position: relative;
+            width: 900px;
+            height: 780px;
+            margin: 0 auto;
+            z-index: 10;
+            transform-origin: top center;
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 950px) { .matrix-stage { transform: scale(0.85); margin-bottom: -100px; margin-left: -40px; } }
+        @media (max-width: 768px) { .matrix-stage { transform: scale(0.65); margin-bottom: -250px; margin-left: -150px; margin-top: 20px; } }
+        @media (max-width: 500px) { .matrix-stage { transform: scale(0.45); margin-bottom: -400px; margin-left: -220px; } }
+
+        .matrix-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .tri-outline {
+            fill: rgba(255,255,255,0.55);
+            stroke: #1a1a1a;
+            stroke-width: 3.5;
+            stroke-linejoin: miter;
+        }
+
+        .tri-guide {
+            fill: none;
+            stroke: #1a1a1a;
+            stroke-width: 2.5;
+        }
+
+        .tri-star {
+            fill: #1a1a1a;
+        }
+
+        .node-base {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Noto Sans TC', sans-serif;
+            font-weight: 900;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            border-radius: 50%;
+        }
+
+        .node-inner {
+            width: 58px;
+            height: 58px;
+            background: #9ca3af;
+            border: 2.5px solid #1a1a1a;
+            font-size: 1.7rem;
+            color: #fff;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
+        }
+
+        .node-main {
+            width: 78px;
+            height: 78px;
+            background: var(--cinnabar);
+            color: #fff;
+            font-size: 2.8rem;
+            border: 3px solid #1a1a1a;
+            z-index: 30;
+            line-height: 1;
+            box-shadow: 0 6px 16px rgba(201, 42, 42, 0.28);
+        }
+
+        .node-outer {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: #fff;
+            border: 2px solid #1a1a1a;
+            border-radius: 50%;
+            font-size: 1.25rem;
+            color: var(--ink-black);
+            z-index: 15;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Noto Sans TC', sans-serif;
+            font-weight: 900;
+            transform: translate(-50%, -50%);
+        }
+
+        .node-outer-sum {
+            background: #f3f4f6;
+            border-width: 2.5px;
+            color: var(--cinnabar);
+            width: 44px;
+            height: 44px;
+            font-size: 1.35rem;
+        }
+
+        .outer-cluster {
+            position: absolute;
+            width: 110px;
+            height: 100px;
+            z-index: 40;
+        }
+
+        .outer-cluster .label-tag {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: -34px;
+        }
+
+        .label-tag {
+            font-size: 13px;
+            font-weight: 900;
+            color: var(--ink-black);
+            background: rgba(255,255,255,0.92);
+            padding: 3px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            white-space: nowrap;
+            letter-spacing: 2px;
+        }
+        .label-tag.top { color: var(--cinnabar); border-color: rgba(185, 28, 28, 0.35); }
+
+        .side-caption {
+            position: absolute;
+            font-size: 22px;
+            font-weight: 900;
+            letter-spacing: 0.35em;
+            writing-mode: vertical-rl;
+            color: #6b7280;
+            z-index: 5;
+        }
+
+        .foundation-box {
+            position: absolute;
+            top: 620px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            z-index: 50;
+            width: 620px;
+        }
+
+        #res-base-digits {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 28px;
+            width: 100%;
+        }
+
+        .digit-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .digit-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .digit-box {
+            width: 42px;
+            height: 52px;
+            background: #fff;
+            border: 2.5px solid #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.6rem;
+            border-radius: 2px;
+            color: var(--ink-black);
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+
+        .digit-caption {
+            font-size: 14px;
+            font-weight: 900;
+            letter-spacing: 0.4em;
+            color: #374151;
+        }
+
+        .summary-container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            padding: 0 20px;
+        }
+        .summary-card {
+            width: 260px;
+            padding: 1.5rem;
+            border-radius: 16px;
+            color: white;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.3s;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid rgba(0,0,0,0.1);
+        }
+        .summary-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.15); filter: brightness(1.1); }
+        .card-red { background: linear-gradient(135deg, #c92a2a, #991b1b); }
+        .card-purple { background: linear-gradient(135deg, #7e22ce, #581c87); }
+
+        .summary-title { font-size: 14px; letter-spacing: 2px; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 4px; margin-bottom: 8px; font-weight: 700; text-transform: uppercase; }
+        .summary-val { font-size: 2.8rem; font-weight: 900; font-family: 'Noto Sans TC', sans-serif; }
+        .summary-hint { font-size: 10px; opacity: 0.8; background: rgba(0,0,0,0.2); padding: 2px 10px; border-radius: 20px; margin-top: 8px; }
+
+        .btn-ink {
+            background: var(--ink-black);
+            color: white;
+            padding: 1.2rem;
+            width: 100%;
+            font-weight: 900;
+            letter-spacing: 4px;
+            border-radius: 50px;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+        .btn-ink:hover:not(:disabled) { background: #333; }
+        .btn-ink:disabled { opacity: 0.75; cursor: wait; }
+
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(255,255,255,0.95);
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        #modal-overlay.active { opacity: 1; }
+        .modal-box {
+            background: #fff;
+            border: 4px solid var(--ink-black);
+            padding: 3rem;
+            width: 100%;
+            max-width: 600px;
+            border-radius: 20px;
+            box-shadow: 20px 20px 0px rgba(0,0,0,0.1);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .inner-voice-box {
+            background: rgba(201, 42, 42, 0.08);
+            padding: 2rem;
+            border-left: 8px solid var(--cinnabar);
+            margin-bottom: 2rem;
+            font-style: italic;
+            font-size: 1.4rem;
+            font-weight: 900;
+            color: var(--cinnabar);
+        }
+
+        .fade-in { animation: fadeIn 0.6s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-left-color: white;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            animation: spin 1s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        select {
+            border: 2px solid #e5e7eb;
+            padding: 0.8rem;
+            width: 100%;
+            font-size: 1.1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #fff;
+        }
+        select:focus { outline: 2px solid rgba(201, 42, 42, 0.35); border-color: #c92a2a; }
+    </style>
+</head>
+<body class="min-h-screen py-10 px-4">
+
+    <div class="max-w-5xl mx-auto">
+        <header class="flex justify-between items-center mb-12 border-b-4 border-gray-200 pb-6 px-4">
+            <div class="flex items-center gap-4 cursor-pointer" onclick="location.reload()" title="重新開始">
+                <div class="w-14 h-14 bg-black rounded-xl flex items-center justify-center text-white font-black text-2xl shadow-lg"><span>T</span></div>
+                <div>
+                    <h1 class="text-3xl font-black tracking-widest text-slate-800">天賦人格</h1>
+                    <p class="text-[10px] font-bold text-slate-400 tracking-[0.3em]">PRO MATRIX v10.3</p>
+                </div>
+            </div>
+        </header>
+
+        <div id="view-query" class="fade-in max-w-4xl mx-auto mb-16">
+            <section class="bg-white p-10 md:p-14 rounded-[2rem] shadow-xl border border-gray-100">
+                <div class="mb-10 text-center">
+                    <h2 class="text-4xl font-black text-slate-800 mb-2">生命靈數計算</h2>
+                    <p class="text-slate-400 font-medium">請輸入<strong class="text-slate-600 font-bold">西元曆</strong>出生年月日，開啟天賦矩陣。</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                    <div><label class="text-xs font-bold text-gray-400 block mb-2">西元年份</label><select id="query-year"></select></div>
+                    <div><label class="text-xs font-bold text-gray-400 block mb-2">月份</label><select id="query-month"></select></div>
+                    <div><label class="text-xs font-bold text-gray-400 block mb-2">日期</label><select id="query-day"></select></div>
+                </div>
+                <button type="button" onclick="generateTPIReport()" id="submit-btn" class="btn-ink shadow-xl text-xl">
+                    開始計算
+                </button>
+            </section>
+        </div>
+
+        <div id="report-container" class="hidden fade-in text-center">
+
+            <div class="mb-2">
+                <h3 class="text-5xl font-black text-slate-900 mt-6 tracking-tight">生命靈數天賦圖</h3>
+                <p id="report-date-line" class="text-slate-400 mt-3 text-sm tracking-wide"></p>
+            </div>
+
+            <div class="matrix-stage-container">
+                <div class="matrix-stage">
+
+                    <!-- 參考圖：頂點(450,70) 左底(150,580) 右底(750,580)；橫線約在 y=247 / y=413 -->
+                    <svg class="matrix-svg" viewBox="0 0 900 750">
+                        <defs>
+                            <polygon id="star5" points="0,-10 2.9,-3.1 10,-3.1 4.2,1.2 6.2,8.1 0,4 -6.2,8.1 -4.2,1.2 -10,-3.1 -2.9,-3.1" />
+                        </defs>
+
+                        <path class="tri-outline" d="M450 70 L750 580 L150 580 Z" />
+                        <!-- 上橫線（對齊三角形邊） -->
+                        <line class="tri-guide" x1="346" y1="247" x2="554" y2="247" />
+                        <!-- 下橫線 -->
+                        <line class="tri-guide" x1="248" y1="413" x2="652" y2="413" />
+                        <!-- 中豎線（自中層起至底） -->
+                        <line class="tri-guide" x1="450" y1="247" x2="450" y2="580" />
+
+                        <use href="#star5" xlink:href="#star5" class="tri-star" x="450" y="58" />
+                        <use href="#star5" xlink:href="#star5" class="tri-star" x="138" y="590" />
+                        <use href="#star5" xlink:href="#star5" class="tri-star" x="762" y="590" />
+                    </svg>
+
+                    <div class="side-caption" style="top: 300px; left: 18px;">世界觀</div>
+                    <div class="side-caption" style="top: 300px; right: 18px;">人生觀</div>
+
+                    <!-- 上方外層：三角三圓（貼近頂點外側） -->
+                    <div class="outer-cluster" style="top: -10px; left: 395px;">
+                        <div class="label-tag top">價值觀與動機</div>
+                        <div class="node-outer node-outer-sum" id="o-t3" style="top: 22px; left: 55px;">?</div>
+                        <div class="node-outer" id="o-t2" style="top: 72px; left: 28px;">?</div>
+                        <div class="node-outer" id="o-t1" style="top: 72px; left: 82px;">?</div>
+                    </div>
+
+                    <!-- 左外層（左斜邊外側） -->
+                    <div class="outer-cluster" style="top: 250px; left: 40px;">
+                        <div class="label-tag">能力</div>
+                        <div class="node-outer node-outer-sum" id="o-l3" style="top: 22px; left: 55px;">?</div>
+                        <div class="node-outer" id="o-l1" style="top: 72px; left: 28px;">?</div>
+                        <div class="node-outer" id="o-l2" style="top: 72px; left: 82px;">?</div>
+                    </div>
+
+                    <!-- 右外層（右斜邊外側） -->
+                    <div class="outer-cluster" style="top: 250px; left: 750px;">
+                        <div class="label-tag">天賦</div>
+                        <div class="node-outer node-outer-sum" id="o-r3" style="top: 22px; left: 55px;">?</div>
+                        <div class="node-outer" id="o-r1" style="top: 72px; left: 28px;">?</div>
+                        <div class="node-outer" id="o-r2" style="top: 72px; left: 82px;">?</div>
+                    </div>
+
+                    <!-- 內層：上1 / 中2 / 下4 -->
+                    <div class="node-base node-main" style="top: 165px; left: 450px;" id="node-l4">?</div>
+
+                    <div class="node-base node-inner" style="top: 330px; left: 375px;" id="node-l3-l">?</div>
+                    <div class="node-base node-inner" style="top: 330px; left: 525px;" id="node-l3-r">?</div>
+
+                    <div class="node-base node-inner" style="top: 500px; left: 275px;" id="node-l2-1">?</div>
+                    <div class="node-base node-inner" style="top: 500px; left: 375px;" id="node-l2-2">?</div>
+                    <div class="node-base node-inner" style="top: 500px; left: 525px;" id="node-l2-3">?</div>
+                    <div class="node-base node-inner" style="top: 500px; left: 625px;" id="node-l2-4">?</div>
+
+                    <div class="foundation-box">
+                        <div id="res-base-digits"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="summary-container">
+                <div class="summary-card card-red" onclick="showPop('num')">
+                    <div class="summary-title">天賦靈數</div>
+                    <div class="summary-val" id="res-num">---</div>
+                    <div class="summary-hint">點擊查看深度解析</div>
+                </div>
+                <div class="summary-card card-purple" onclick="showPop('pillar')">
+                    <div class="summary-title">八字日柱</div>
+                    <div class="summary-val" id="res-pillar">---</div>
+                    <div class="summary-hint">經典三書對照</div>
+                </div>
+            </div>
+
+            <div class="text-xs text-gray-300 font-mono mt-10 pb-20">REF: <span id="res-key">---</span></div>
+        </div>
+    </div>
+
+    <div id="modal-overlay" onclick="closePop()">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="text-center mb-8">
+                <p class="text-xs font-bold text-gray-400 tracking-widest uppercase mb-2">Interpretation</p>
+                <h2 id="modal-title" class="text-4xl font-black text-gray-800">---</h2>
+                <div class="w-12 h-1 bg-red-600 mx-auto mt-4 rounded-full"></div>
+            </div>
+            <div id="modal-body" class="text-left text-lg leading-loose text-gray-600 space-y-6"></div>
+            <button type="button" onclick="closePop()" class="mt-10 w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800">關閉</button>
+        </div>
+    </div>
+
+    <script>
+        let currentResult = null;
+        let calculating = false;
+
+        const voices = {
+            1: "「我不是愛掌控，只是比別人先想到10步。」",
+            2: "「我是溫暖小太陽，但也怕融化。」",
+            3: "「話一多全場就開心。」",
+            4: "「對計劃有神聖信仰。」",
+            5: "「別問我下一秒去哪。」",
+            6: "「想讓一切更好。」",
+            7: "「腦內開50個視窗分析。」",
+            8: "「剛好比別人熱心助人。」",
+            9: "「希望大家都有美好未來。」"
+        };
+
+        const pillarData = {
+            "甲子": "木坐水上，枯木逢春。聰明有才，自尊心強。",
+            "乙丑": "木坐金庫，內斂刻苦。外柔內剛，默默耕耘。",
+            "丙寅": "木火通明，熱情大方，具領導力。",
+            "丁卯": "火木相生，文采斐然，心思細膩。",
+            "戊辰": "土厚載物，穩重可靠，適合守成發展。",
+            "己巳": "土木火相助，謙和務實，後勁十足。",
+            "庚午": "金火鍛造，剛毅果決，執行力強。",
+            "辛未": "金土相生，雅致敏銳，重品質與細節。",
+            "壬申": "水金相生，思緒靈活，善於應變。",
+            "癸酉": "水金相生，清澈專注，洞察力佳。"
+        };
+
+        function reduce(n) {
+            if (n === 0) return 0;
+            const s = String(n).split('').reduce((a, b) => a + parseInt(b, 10), 0);
+            return s > 9 ? reduce(s) : s;
+        }
+
+        function daysInSolarMonth(year, month) {
+            return new Date(year, month, 0).getDate();
+        }
+
+        function refreshDayOptions() {
+            const yEl = document.getElementById('query-year');
+            const mEl = document.getElementById('query-month');
+            const dEl = document.getElementById('query-day');
+            const year = parseInt(yEl.value, 10);
+            const month = parseInt(mEl.value, 10);
+            const prevDay = parseInt(dEl.value, 10) || 1;
+            const maxDay = daysInSolarMonth(year, month);
+
+            dEl.innerHTML = '';
+            for (let i = 1; i <= maxDay; i++) {
+                dEl.add(new Option(i + ' 日', i));
+            }
+            dEl.value = String(Math.min(prevDay, maxDay));
+        }
+
+        function resolveBirthDate() {
+            const y = parseInt(document.getElementById('query-year').value, 10);
+            const m = parseInt(document.getElementById('query-month').value, 10);
+            const d = parseInt(document.getElementById('query-day').value, 10);
+            const solar = Solar.fromYmd(y, m, d);
+            const lunar = solar.getLunar();
+            return { solar, lunar };
+        }
+
+        function initPage() {
+            const y = document.getElementById('query-year');
+            const m = document.getElementById('query-month');
+
+            for (let i = 2026; i >= 1930; i--) y.add(new Option(i + ' 年', i));
+            for (let i = 1; i <= 12; i++) m.add(new Option(i + ' 月', i));
+
+            y.addEventListener('change', refreshDayOptions);
+            m.addEventListener('change', refreshDayOptions);
+            refreshDayOptions();
+            fillBaseDigits([0, 0, 0, 0, 0, 0, 0, 0]);
+            document.querySelectorAll('#res-base-digits .digit-box').forEach(el => { el.textContent = ''; });
+        }
+
+        function setLoading(on) {
+            calculating = on;
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = on;
+            btn.innerHTML = on
+                ? '<span class="spinner"></span><span>一理心照、吉祥如意</span>'
+                : '開始計算';
+        }
+
+        function fillBaseDigits(arr) {
+            const box = document.getElementById('res-base-digits');
+            box.innerHTML = '';
+            const groups = [
+                { label: '日期', digits: [arr[0], arr[1]] },
+                { label: '月份', digits: [arr[2], arr[3]] },
+                { label: '年份', digits: [arr[4], arr[5], arr[6], arr[7]] }
+            ];
+            groups.forEach(g => {
+                const gDiv = document.createElement('div');
+                gDiv.className = 'digit-group';
+                const row = document.createElement('div');
+                row.className = 'digit-row';
+                g.digits.forEach(n => {
+                    const cell = document.createElement('div');
+                    cell.className = 'digit-box';
+                    cell.textContent = n;
+                    row.appendChild(cell);
+                });
+                const cap = document.createElement('div');
+                cap.className = 'digit-caption';
+                cap.textContent = g.label;
+                gDiv.appendChild(row);
+                gDiv.appendChild(cap);
+                box.appendChild(gDiv);
+            });
+        }
+
+        function generateRefKey(solar, L4) {
+            const raw = `${solar.getYear()}${solar.getMonth()}${solar.getDay()}${L4}`;
+            let hash = 0;
+            for (let i = 0; i < raw.length; i++) hash = ((hash << 5) - hash) + raw.charCodeAt(i) | 0;
+            return Math.abs(hash).toString(36).toUpperCase().padStart(8, 'X').slice(0, 8);
+        }
+
+        async function generateTPIReport() {
+            if (calculating) return;
+            if (typeof Solar === 'undefined') {
+                alert('曆法套件尚未載入，請重新整理頁面。');
+                return;
+            }
+
+            setLoading(true);
+
+            setTimeout(() => {
+                try {
+                    const { solar, lunar } = resolveBirthDate();
+                    const sY = solar.getYear();
+                    const sM = solar.getMonth();
+                    const sD = solar.getDay();
+
+                    const dS = String(sD).padStart(2, '0');
+                    const mS = String(sM).padStart(2, '0');
+                    const yS = String(sY);
+                    const arr = [...dS, ...mS, ...yS].map(Number);
+
+                    const L2_1 = reduce(arr[0] + arr[1]);
+                    const L2_2 = reduce(arr[2] + arr[3]);
+                    const L2_3 = reduce(arr[4] + arr[5]);
+                    const L2_4 = reduce(arr[6] + arr[7]);
+                    const L3_l = reduce(L2_1 + L2_2);
+                    const L3_r = reduce(L2_3 + L2_4);
+                    const L4 = reduce(L3_l + L3_r);
+
+                    const OT1 = reduce(L3_r + L4);
+                    const OT2 = reduce(L3_l + L4);
+                    const OT3 = reduce(OT1 + OT2);
+                    const OL1 = reduce(L2_1 + L3_l);
+                    const OL2 = reduce(L2_2 + L3_l);
+                    const OL3 = reduce(OL1 + OL2);
+                    const OR1 = reduce(L2_3 + L3_r);
+                    const OR2 = reduce(L2_4 + L3_r);
+                    const OR3 = reduce(OR1 + OR2);
+
+                    fillBaseDigits(arr);
+
+                    document.getElementById('node-l4').innerText = L4;
+                    document.getElementById('node-l3-l').innerText = L3_l;
+                    document.getElementById('node-l3-r').innerText = L3_r;
+                    document.getElementById('node-l2-1').innerText = L2_1;
+                    document.getElementById('node-l2-2').innerText = L2_2;
+                    document.getElementById('node-l2-3').innerText = L2_3;
+                    document.getElementById('node-l2-4').innerText = L2_4;
+
+                    document.getElementById('o-t1').innerText = OT1;
+                    document.getElementById('o-t2').innerText = OT2;
+                    document.getElementById('o-t3').innerText = OT3;
+                    document.getElementById('o-l1').innerText = OL1;
+                    document.getElementById('o-l2').innerText = OL2;
+                    document.getElementById('o-l3').innerText = OL3;
+                    document.getElementById('o-r1').innerText = OR1;
+                    document.getElementById('o-r2').innerText = OR2;
+                    document.getElementById('o-r3').innerText = OR3;
+
+                    const pillar = lunar.getEightChar().getDay();
+                    document.getElementById('res-num').innerText = L4;
+                    document.getElementById('res-pillar').innerText = pillar;
+                    document.getElementById('res-key').innerText = generateRefKey(solar, L4);
+                    document.getElementById('report-date-line').textContent =
+                        `西元曆 ${sY} 年 ${sM} 月 ${sD} 日`;
+
+                    currentResult = { num: L4, pillar };
+                    document.getElementById('report-container').classList.remove('hidden');
+                    document.getElementById('report-container').scrollIntoView({ behavior: 'smooth' });
+                } catch (e) {
+                    console.error(e);
+                    alert('日期錯誤，請確認西元曆年月日。');
+                } finally {
+                    setLoading(false);
+                }
+            }, 500);
+        }
+
+        function showPop(t) {
+            if (!currentResult) return;
+            const m = document.getElementById('modal-overlay');
+            const mt = document.getElementById('modal-title');
+            const mb = document.getElementById('modal-body');
+            m.style.display = 'flex';
+            requestAnimationFrame(() => m.classList.add('active'));
+
+            if (t === 'num') {
+                mt.innerText = `天賦靈數 ${currentResult.num}`;
+                mb.innerHTML = `<div class="inner-voice-box">${voices[currentResult.num] || '「獨一無二的靈魂。」'}</div><p>這是您的核心人格原型。</p>`;
+            } else if (t === 'pillar') {
+                mt.innerText = currentResult.pillar;
+                const desc = pillarData[currentResult.pillar] || '格局清透，氣勢不凡。';
+                mb.innerHTML = `<div class="space-y-4"><p class="font-bold text-purple-700">經典解析</p><p>${desc}</p></div>`;
+            }
+        }
+
+        function closePop() {
+            const m = document.getElementById('modal-overlay');
+            m.classList.remove('active');
+            setTimeout(() => { m.style.display = 'none'; }, 250);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closePop();
+        });
+
+        window.onload = initPage;
+    </script>
+</body>
+</html>
