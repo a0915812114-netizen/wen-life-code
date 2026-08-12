@@ -4,4 +4,8 @@ dist
 .env
 .env.local
 *.local
+.admin-credentials.local
 .vercel
+_pptx_extract
+firebase-debug.log
+*-debug.log

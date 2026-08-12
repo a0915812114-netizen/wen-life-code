@@ -23,6 +23,8 @@ import {
 export default function AdminDashboard({
   logs,
   firebaseReady,
+  cloudConnected = false,
+  adminEmail = '',
   onBack,
   onRefreshLocal,
 }) {
@@ -109,14 +111,18 @@ export default function AdminDashboard({
 
         <div
           className={`rounded-2xl border-2 px-6 py-4 text-sm font-bold ${
-            firebaseReady
+            cloudConnected
               ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-              : 'border-amber-300 bg-amber-50 text-amber-800'
+              : firebaseReady
+                ? 'border-amber-300 bg-amber-50 text-amber-800'
+                : 'border-rose-300 bg-rose-50 text-rose-800'
           }`}
         >
-          {firebaseReady
-            ? '已連接 Firebase：後台會合併雲端與本機查詢紀錄。'
-            : '目前以本機紀錄運作。若要彙整「所有人」在線上的查詢，請設定 VITE_FIREBASE_CONFIG。'}
+          {cloudConnected
+            ? `已以管理員身份登入（${adminEmail}），正在讀取雲端查詢紀錄。`
+            : firebaseReady
+              ? 'Firebase 已設定，但尚未通過管理員登入；目前只顯示本機紀錄。雲端個資僅管理員可讀。'
+              : '尚未設定 Firebase，目前僅本機紀錄可用。'}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

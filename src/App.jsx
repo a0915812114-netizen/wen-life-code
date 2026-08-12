@@ -20,16 +20,20 @@ import {
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
-  signInAnonymously,
-  signInWithCustomToken,
+  signInWithEmailAndPassword,
+  signOut,
   onAuthStateChanged,
 } from 'firebase/auth';
 import {
   getFirestore,
   collection,
-  addDoc,
+  doc,
+  setDoc,
   onSnapshot,
   serverTimestamp,
+  query,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import {
   numberProfiles,
@@ -44,8 +48,18 @@ import {
   logFingerprint,
   mergeLogs,
   saveLocalLog,
+  toLogDocId,
 } from './lib/queryLogs';
 import AdminDashboard from './components/AdminDashboard';
+
+const ADMIN_EMAILS = ['a0915812114@gmail.com'];
+const DEFAULT_ADMIN_EMAIL =
+  import.meta.env.VITE_ADMIN_EMAIL || ADMIN_EMAILS[0];
+
+function isAdminUser(u) {
+  const email = u?.email?.toLowerCase?.();
+  return Boolean(email && ADMIN_EMAILS.includes(email));
+}
 
 function readGlobal(name) {
   try {
@@ -108,8 +122,10 @@ const App = () => {
   const [tempBirthDate, setTempBirthDate] = useState(todayStr);
   const [tempUserName, setTempUserName] = useState('');
   const [view, setView] = useState('user');
+  const [adminEmail, setAdminEmail] = useState(DEFAULT_ADMIN_EMAIL);
   const [adminPassword, setAdminPassword] = useState('');
-  const [loginError, setLoginError] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [logs, setLogs] = useState([]);
   const [cloudLogs, setCloudLogs] = useState([]);
@@ -118,7 +134,6 @@ const App = () => {
 
   const resultRef = useRef(null);
   const lastLoggedRef = useRef(null);
-  const SECRET_KEY = 'gobbie403';
 
   const refreshLocalLogs = () => {
     const local = loadLocalLogs().map((item) => ({
@@ -141,20 +156,6 @@ const App = () => {
       };
     }
 
-    const initAuth = async () => {
-      try {
-        const token = readGlobal('__initial_auth_token');
-        if (token) {
-          await signInWithCustomToken(auth, token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error('驗證錯誤:', err);
-      }
-    };
-
-    initAuth();
     const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
     return () => {
       unsubscribe();
@@ -187,25 +188,35 @@ const App = () => {
 
         if (firebaseReady && db) {
           try {
-            await addDoc(
-              collection(db, 'artifacts', appId, 'public', 'data', 'analysis_logs'),
+            const docId = toLogDocId(entry.dedupeKey);
+            await setDoc(
+              doc(
+                db,
+                'artifacts',
+                appId,
+                'public',
+                'data',
+                'analysis_logs',
+                docId,
+              ),
               {
                 timestamp: serverTimestamp(),
                 createdAt: entry.createdAt,
                 dedupeKey: entry.dedupeKey,
-                name: entry.name,
+                name: entry.name.slice(0, 40),
                 dob: entry.dob,
                 mainChar: Number(entry.mainChar),
-                archetype: entry.archetype,
-                ideology: entry.ideology,
-                outerChar: entry.outerChar,
-                innerChar: entry.innerChar,
-                guardingCode: entry.guardingCode,
-                careerCode: entry.careerCode,
-                outerHeartType: entry.outerHeartType,
+                archetype: String(entry.archetype || '').slice(0, 20),
+                ideology: String(entry.ideology || '').slice(0, 20),
+                outerChar: String(entry.outerChar || '').slice(0, 12),
+                innerChar: String(entry.innerChar || '').slice(0, 12),
+                guardingCode: String(entry.guardingCode || '').slice(0, 12),
+                careerCode: String(entry.careerCode || '').slice(0, 12),
+                outerHeartType: String(entry.outerHeartType || '').slice(0, 20),
                 motivation: Number(entry.motivation),
                 energy: Number(entry.energy),
               },
+              { merge: true },
             );
           } catch (err) {
             console.error('雲端紀錄失敗:', err);
@@ -247,14 +258,16 @@ const App = () => {
   }, [cloudLogs]);
 
   useEffect(() => {
-    if (!firebaseReady || !db || view !== 'admin') return;
-    const q = collection(
-      db,
-      'artifacts',
-      appId,
-      'public',
-      'data',
-      'analysis_logs',
+    if (!firebaseReady || !db || view !== 'admin' || !isAdminUser(user)) {
+      if (view === 'admin' && !isAdminUser(user)) {
+        setCloudLogs([]);
+      }
+      return;
+    }
+    const q = query(
+      collection(db, 'artifacts', appId, 'public', 'data', 'analysis_logs'),
+      orderBy('createdAt', 'desc'),
+      limit(500),
     );
     const unsubscribe = onSnapshot(
       q,
@@ -274,20 +287,57 @@ const App = () => {
         });
         setCloudLogs(data);
       },
-      (err) => console.error('監聽失敗:', err),
+      (err) => {
+        console.error('監聽失敗:', err);
+        setCloudLogs([]);
+      },
     );
     return () => unsubscribe();
-  }, [view]);
+  }, [view, user]);
 
-  const handleAdminAuth = (e) => {
+  const handleAdminAuth = async (e) => {
     e.preventDefault();
-    if (adminPassword === SECRET_KEY) {
+    setLoginError('');
+    if (!firebaseReady || !auth) {
+      setLoginError('Firebase 尚未就緒，無法登入後台。');
+      return;
+    }
+    setLoginLoading(true);
+    try {
+      const cred = await signInWithEmailAndPassword(
+        auth,
+        adminEmail.trim(),
+        adminPassword,
+      );
+      if (!isAdminUser(cred.user)) {
+        await signOut(auth);
+        setLoginError('此帳號沒有後台權限。');
+        setAdminPassword('');
+        return;
+      }
       refreshLocalLogs();
       setView('admin');
-      setLoginError(false);
-    } else {
-      setLoginError(true);
       setAdminPassword('');
+    } catch (err) {
+      console.error(err);
+      setLoginError('帳號或密碼錯誤，請再試一次。');
+      setAdminPassword('');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleAdminBack = async () => {
+    setView('user');
+    setAdminPassword('');
+    setLoginError('');
+    setCloudLogs([]);
+    if (auth?.currentUser) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 
@@ -296,31 +346,58 @@ const App = () => {
       <div className="min-h-screen bg-[#FDFCF8] flex items-center justify-center p-6 font-serif ink-paper">
         <div className="bg-white p-12 rounded-3xl shadow-2xl border-4 border-double border-slate-800 max-w-md w-full text-center ink-card">
           <LockKeyhole className="text-slate-800 mx-auto mb-8" size={64} />
-          <h2 className="text-2xl font-black text-slate-800 mb-2">權限驗證</h2>
-          <form onSubmit={handleAdminAuth} className="space-y-6">
-            <input
-              type="password"
-              value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
-              placeholder="輸入密碼"
-              className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-2 border-slate-800 outline-none text-center text-xl font-black"
-            />
+          <h2 className="text-2xl font-black text-slate-800 mb-2">管理員登入</h2>
+          <p className="text-sm text-slate-500 font-bold mb-6">
+            使用 Firebase 管理員帳號進入彙整後台
+          </p>
+          <form onSubmit={handleAdminAuth} className="space-y-4 text-left">
+            <div>
+              <label className="text-xs font-black text-slate-400 tracking-widest block mb-2">
+                帳號 Email
+              </label>
+              <input
+                type="email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="admin@example.com"
+                className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-2 border-slate-800 outline-none text-lg font-bold"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-black text-slate-400 tracking-widest block mb-2">
+                密碼
+              </label>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="輸入密碼"
+                className="w-full px-6 py-4 bg-slate-50 rounded-2xl border-2 border-slate-800 outline-none text-lg font-bold"
+                required
+              />
+            </div>
             {loginError && (
-              <p className="text-sm font-bold text-red-600">密碼錯誤，請再試一次</p>
+              <p className="text-sm font-bold text-red-600 text-center">{loginError}</p>
             )}
-            <div className="flex gap-4">
+            <div className="flex gap-4 pt-2">
               <button
                 type="button"
-                onClick={() => setView('user')}
+                onClick={() => {
+                  setView('user');
+                  setLoginError('');
+                  setAdminPassword('');
+                }}
                 className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition-all"
               >
                 返回
               </button>
               <button
                 type="submit"
-                className="flex-1 py-4 bg-black text-white rounded-2xl font-bold"
+                disabled={loginLoading}
+                className="flex-1 py-4 bg-black text-white rounded-2xl font-bold disabled:opacity-60"
               >
-                進入
+                {loginLoading ? '驗證中...' : '進入'}
               </button>
             </div>
           </form>
@@ -333,10 +410,9 @@ const App = () => {
       <AdminDashboard
         logs={logs}
         firebaseReady={firebaseReady}
-        onBack={() => {
-          setView('user');
-          setAdminPassword('');
-        }}
+        cloudConnected={isAdminUser(user)}
+        adminEmail={user?.email || ''}
+        onBack={handleAdminBack}
         onRefreshLocal={refreshLocalLogs}
       />
     );

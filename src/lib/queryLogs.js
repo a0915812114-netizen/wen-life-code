@@ -99,6 +99,22 @@ export function logFingerprint(log, bucketMs = 60 * 1000) {
   return `${name}|${dob}|${main}|${bucket}`;
 }
 
+/** Firestore 文件 ID（依 dedupeKey 穩定產生，供雲端 upsert 去重） */
+export function toLogDocId(dedupeKey) {
+  const raw = String(dedupeKey || '');
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hex = (hash >>> 0).toString(16).padStart(8, '0');
+  const safe = raw
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 48);
+  return `log_${hex}_${safe || 'x'}`;
+}
+
 export function mergeLogs(primary = [], secondary = []) {
   const map = new Map();
   // 先本機、後雲端；相同指紋時優先保留雲端
