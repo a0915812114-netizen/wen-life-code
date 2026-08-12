@@ -20,10 +20,13 @@ import {
   clearLocalLogs,
 } from '../lib/queryLogs';
 
+const PAGE_SIZE = 20;
+
 export default function AdminDashboard({
   logs,
   firebaseReady,
   cloudConnected = false,
+  cloudSyncError = '',
   adminEmail = '',
   onBack,
   onRefreshLocal,
@@ -31,6 +34,7 @@ export default function AdminDashboard({
   const [keyword, setKeyword] = useState('');
   const [mainFilter, setMainFilter] = useState('all');
   const [range, setRange] = useState('all');
+  const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const now = Date.now();
@@ -52,6 +56,13 @@ export default function AdminDashboard({
       return true;
     });
   }, [logs, keyword, mainFilter, range]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   const stats = useMemo(() => aggregateLogs(filtered), [filtered]);
   const maxMain = Math.max(1, ...Object.values(stats.mainDist));
@@ -111,18 +122,22 @@ export default function AdminDashboard({
 
         <div
           className={`rounded-2xl border-2 px-6 py-4 text-sm font-bold ${
-            cloudConnected
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-              : firebaseReady
-                ? 'border-amber-300 bg-amber-50 text-amber-800'
-                : 'border-rose-300 bg-rose-50 text-rose-800'
+            cloudSyncError
+              ? 'border-rose-300 bg-rose-50 text-rose-800'
+              : cloudConnected
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                : firebaseReady
+                  ? 'border-amber-300 bg-amber-50 text-amber-800'
+                  : 'border-rose-300 bg-rose-50 text-rose-800'
           }`}
         >
-          {cloudConnected
-            ? `已以管理員身份登入（${adminEmail}），正在讀取雲端查詢紀錄。`
-            : firebaseReady
-              ? 'Firebase 已設定，但尚未通過管理員登入；目前只顯示本機紀錄。雲端個資僅管理員可讀。'
-              : '尚未設定 Firebase，目前僅本機紀錄可用。'}
+          {cloudSyncError
+            ? cloudSyncError
+            : cloudConnected
+              ? `已以管理員身份登入（${adminEmail}），正在讀取雲端查詢紀錄。`
+              : firebaseReady
+                ? 'Firebase 已設定，但尚未通過管理員登入；目前只顯示本機紀錄。雲端個資僅管理員可讀。'
+                : '尚未設定 Firebase，目前僅本機紀錄可用。'}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -220,7 +235,10 @@ export default function AdminDashboard({
                   <Search size={18} className="text-slate-400" />
                   <input
                     value={keyword}
-                    onChange={(e) => setKeyword(e.target.value)}
+                    onChange={(e) => {
+                      setKeyword(e.target.value);
+                      setPage(1);
+                    }}
                     placeholder="姓名 / 生日 / 代碼"
                     className="w-full outline-none font-bold bg-transparent"
                   />
@@ -232,7 +250,10 @@ export default function AdminDashboard({
                 </label>
                 <select
                   value={mainFilter}
-                  onChange={(e) => setMainFilter(e.target.value)}
+                  onChange={(e) => {
+                    setMainFilter(e.target.value);
+                    setPage(1);
+                  }}
                   className="border-2 border-slate-200 rounded-2xl px-4 py-3 font-bold outline-none"
                 >
                   <option value="all">全部</option>
@@ -249,7 +270,10 @@ export default function AdminDashboard({
                 </label>
                 <select
                   value={range}
-                  onChange={(e) => setRange(e.target.value)}
+                  onChange={(e) => {
+                    setRange(e.target.value);
+                    setPage(1);
+                  }}
                   className="border-2 border-slate-200 rounded-2xl px-4 py-3 font-bold outline-none"
                 >
                   <option value="all">全部</option>
@@ -288,7 +312,7 @@ export default function AdminDashboard({
           </div>
 
           <div className="text-sm font-bold text-slate-500">
-            目前顯示 {filtered.length} / {logs.length} 筆
+            符合 {filtered.length} / {logs.length} 筆｜第 {currentPage} / {totalPages} 頁（每頁 {PAGE_SIZE} 筆）
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -308,14 +332,14 @@ export default function AdminDashboard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.length === 0 && (
+                {pageRows.length === 0 && (
                   <tr>
                     <td colSpan={10} className="px-5 py-12 text-center text-slate-400 font-bold">
                       尚無符合條件的查詢紀錄。請先在前台按「開始解析」。
                     </td>
                   </tr>
                 )}
-                {filtered.map((log) => (
+                {pageRows.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-4 text-xs font-bold text-slate-400 whitespace-nowrap">
                       {formatLogTime(log)}
@@ -348,6 +372,31 @@ export default function AdminDashboard({
               </tbody>
             </table>
           </div>
+
+          {filtered.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-5 py-3 rounded-2xl border-2 border-slate-200 font-black disabled:opacity-40"
+              >
+                上一頁
+              </button>
+              <div className="text-sm font-bold text-slate-500">
+                顯示第 {(currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filtered.length)} 筆
+              </div>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-5 py-3 rounded-2xl border-2 border-slate-200 font-black disabled:opacity-40"
+              >
+                下一頁
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </div>

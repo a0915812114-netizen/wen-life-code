@@ -131,6 +131,13 @@ const App = () => {
   const [cloudLogs, setCloudLogs] = useState([]);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [hasConfirmed, setHasConfirmed] = useState(false);
+  const [cloudSaveNotice, setCloudSaveNotice] = useState('');
+  const [cloudSyncError, setCloudSyncError] = useState('');
+  const [exportNotice, setExportNotice] = useState('');
+  const [html2canvasReady, setHtml2canvasReady] = useState(
+    () => typeof window !== 'undefined' && typeof window.html2canvas !== 'undefined',
+  );
 
   const resultRef = useRef(null);
   const lastLoggedRef = useRef(null);
@@ -144,10 +151,16 @@ const App = () => {
   };
 
   useEffect(() => {
+    if (typeof window.html2canvas !== 'undefined') {
+      setHtml2canvasReady(true);
+    }
+
     const script = document.createElement('script');
     script.src =
       'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
     script.async = true;
+    script.onload = () => setHtml2canvasReady(true);
+    script.onerror = () => setHtml2canvasReady(false);
     document.body.appendChild(script);
 
     if (!firebaseReady || !auth) {
@@ -170,8 +183,10 @@ const App = () => {
 
   const handleConfirm = async () => {
     setIsConfirming(true);
+    setCloudSaveNotice('');
     setBirthDate(tempBirthDate);
     setUserName(tempUserName);
+    setHasConfirmed(true);
 
     const result = computeLifeCode(tempBirthDate);
     if (result) {
@@ -220,6 +235,7 @@ const App = () => {
             );
           } catch (err) {
             console.error('雲端紀錄失敗:', err);
+            setCloudSaveNotice('本機已儲存；雲端同步失敗，請稍後再試。');
           }
         }
       }
@@ -229,7 +245,16 @@ const App = () => {
   };
 
   const downloadImage = async () => {
-    if (!resultRef.current || typeof window.html2canvas === 'undefined') return;
+    if (!resultRef.current) return;
+    setExportNotice('');
+    if (typeof window.html2canvas === 'undefined') {
+      setExportNotice(
+        html2canvasReady
+          ? '下載工具異常，請重新整理頁面後再試。'
+          : '下載工具載入中，請稍候再試。',
+      );
+      return;
+    }
     setIsExporting(true);
     try {
       const canvas = await window.html2canvas(resultRef.current, {
@@ -244,6 +269,7 @@ const App = () => {
       link.click();
     } catch (err) {
       console.error('失敗:', err);
+      setExportNotice('下載失敗，請再試一次。');
     } finally {
       setIsExporting(false);
     }
@@ -262,6 +288,9 @@ const App = () => {
       if (view === 'admin' && !isAdminUser(user)) {
         setCloudLogs([]);
       }
+      if (view !== 'admin') {
+        setCloudSyncError('');
+      }
       return;
     }
     const q = query(
@@ -269,6 +298,7 @@ const App = () => {
       orderBy('createdAt', 'desc'),
       limit(500),
     );
+    setCloudSyncError('');
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -286,10 +316,16 @@ const App = () => {
           return item;
         });
         setCloudLogs(data);
+        setCloudSyncError('');
       },
       (err) => {
         console.error('監聽失敗:', err);
         setCloudLogs([]);
+        setCloudSyncError(
+          err?.code === 'failed-precondition'
+            ? '雲端同步失敗：可能缺少索引，請稍後再試或聯繫管理員。'
+            : '雲端同步失敗，目前只顯示本機紀錄。',
+        );
       },
     );
     return () => unsubscribe();
@@ -332,6 +368,7 @@ const App = () => {
     setAdminPassword('');
     setLoginError('');
     setCloudLogs([]);
+    setCloudSyncError('');
     if (auth?.currentUser) {
       try {
         await signOut(auth);
@@ -411,6 +448,7 @@ const App = () => {
         logs={logs}
         firebaseReady={firebaseReady}
         cloudConnected={isAdminUser(user)}
+        cloudSyncError={cloudSyncError}
         adminEmail={user?.email || ''}
         onBack={handleAdminBack}
         onRefreshLocal={refreshLocalLogs}
@@ -495,6 +533,10 @@ const App = () => {
                     setBirthDate(now);
                     setTempUserName('');
                     setUserName('');
+                    setHasConfirmed(false);
+                    setCloudSaveNotice('');
+                    setExportNotice('');
+                    lastLoggedRef.current = null;
                   }}
                   className="p-4 bg-white border-2 border-slate-100 rounded-2xl text-slate-300 hover:text-black hover:border-black shadow-md transition-all"
                 >
@@ -502,10 +544,21 @@ const App = () => {
                 </button>
               </div>
             </div>
+            {(cloudSaveNotice || exportNotice) && (
+              <div className="mt-6 w-full text-center text-sm font-bold text-amber-800 bg-amber-50 border-2 border-amber-200 rounded-2xl px-4 py-3">
+                {cloudSaveNotice || exportNotice}
+              </div>
+            )}
           </div>
         </header>
 
-        {r && (
+        {!hasConfirmed && (
+          <div className="mt-16 text-center text-slate-400 font-bold tracking-widest">
+            請填入姓名與生日，按下「開始解析」後才會顯示結果
+          </div>
+        )}
+
+        {hasConfirmed && r && (
           <div
             ref={resultRef}
             className="flex flex-col gap-12 items-start justify-center mt-16 animate-in fade-in duration-1000 p-4 md:p-12 ink-paper-texture"
@@ -519,10 +572,16 @@ const App = () => {
                   onClick={downloadImage}
                   className="flex items-center gap-3 px-10 py-4 bg-white border-4 border-double border-black text-black rounded-xl font-black hover:bg-black hover:text-white transition-all shadow-xl active:scale-95 ink-card"
                 >
-                  <Download size={22} /> 下載卷軸
+                  <Download size={22} />{' '}
+                  {html2canvasReady ? '下載卷軸' : '準備下載中...'}
                 </button>
               )}
             </div>
+            {exportNotice && (
+              <p className="w-full text-center text-sm font-bold text-amber-800 -mt-4 mb-4">
+                {exportNotice}
+              </p>
+            )}
 
             <div className="w-full grid grid-cols-1 xl:grid-cols-3 gap-12 relative">
               <div className="xl:col-span-2 bg-white rounded-3xl shadow-2xl p-8 md:p-12 border-2 border-slate-800 relative flex flex-col items-center overflow-hidden ink-card">
