@@ -70,7 +70,7 @@ export default function AdminDashboard({
   const exportCsv = () => {
     const csv = '\uFEFF' + logsToCsv(filtered);
     downloadTextFile(
-      `生命密碼查詢明細_${new Date().toISOString().slice(0, 10)}.csv`,
+      `生命靈數查詢明細_${new Date().toISOString().slice(0, 10)}.csv`,
       csv,
       'text/csv;charset=utf-8',
     );
@@ -78,14 +78,14 @@ export default function AdminDashboard({
 
   const exportSummary = () => {
     downloadTextFile(
-      `生命密碼查詢彙整_${new Date().toISOString().slice(0, 10)}.txt`,
+      `生命靈數查詢彙整_${new Date().toISOString().slice(0, 10)}.txt`,
       buildSummaryReport(filtered),
     );
   };
 
   const exportJson = () => {
     downloadTextFile(
-      `生命密碼查詢資料_${new Date().toISOString().slice(0, 10)}.json`,
+      `生命靈數查詢資料_${new Date().toISOString().slice(0, 10)}.json`,
       JSON.stringify(filtered, null, 2),
       'application/json;charset=utf-8',
     );
@@ -335,7 +335,7 @@ export default function AdminDashboard({
                 {pageRows.length === 0 && (
                   <tr>
                     <td colSpan={10} className="px-5 py-12 text-center text-slate-400 font-bold">
-                      尚無符合條件的查詢紀錄。請先在前台按「開始解析」。
+                      尚無符合條件的查詢紀錄。請先在前台按「展開卷軸」。
                     </td>
                   </tr>
                 )}

@@ -10,6 +10,8 @@ import {
   Users,
   Target,
   BookOpen,
+  Share2,
+  Link2,
 } from 'lucide-react';
 import { dailyPractices, reminders } from '../data/numberProfiles';
 import GourdIcon from './GourdIcon';
@@ -21,9 +23,11 @@ export default function LifeCodeResult({
   profile,
   ideology,
   isExporting,
-  html2canvasReady,
   exportNotice,
+  shareNotice,
   onDownload,
+  onShare,
+  onCopyLink,
 }) {
   return (
     <div
@@ -38,18 +42,34 @@ export default function LifeCodeResult({
               {userName ? `「${userName}」命數全息圖` : '生命靈數圖'}
             </h2>
             {!isExporting && (
-              <button
-                onClick={onDownload}
-                className="inline-flex items-center gap-3 px-8 py-3 border border-[color:var(--ink)] text-[color:var(--ink)] font-black hover:bg-[color:var(--ink)] hover:text-[color:var(--paper)] transition-all"
-              >
-                <Download size={20} />{' '}
-                {html2canvasReady ? '下載卷軸' : '準備下載中...'}
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={onShare}
+                  className="inline-flex items-center gap-2 px-5 py-3 border border-[color:var(--cinnabar)] text-[color:var(--cinnabar)] font-black hover:bg-[color:var(--cinnabar)] hover:text-[#F7F1E6] transition-all"
+                >
+                  <Share2 size={18} />
+                  分享結果
+                </button>
+                <button
+                  onClick={onCopyLink}
+                  className="inline-flex items-center gap-2 px-5 py-3 border border-[color:var(--ink)]/40 text-[color:var(--ink)] font-black hover:border-[color:var(--ink)] transition-all"
+                >
+                  <Link2 size={18} />
+                  複製連結
+                </button>
+                <button
+                  onClick={onDownload}
+                  className="inline-flex items-center gap-3 px-8 py-3 border border-[color:var(--ink)] text-[color:var(--ink)] font-black hover:bg-[color:var(--ink)] hover:text-[color:var(--paper)] transition-all"
+                >
+                  <Download size={20} />
+                  下載卷軸
+                </button>
+              </div>
             )}
           </div>
-          {exportNotice && (
-            <p className="w-full text-center text-sm font-bold text-[color:var(--cinnabar-deep)] -mt-4 mb-6">
-              {exportNotice}
+          {(exportNotice || shareNotice) && (
+            <p className="w-full text-center text-sm font-bold text-[color:var(--cinnabar-deep)] -mt-4 mb-6 break-all">
+              {exportNotice || shareNotice}
             </p>
           )}
 
@@ -462,9 +482,19 @@ export default function LifeCodeResult({
               </div>
               <h4 className="text-xl font-black tracking-widest">核心人格</h4>
             </div>
+            {profile.bookTitle && (
+              <p className="text-sm font-bold tracking-widest text-[color:var(--cinnabar)] mb-4">
+                書中篇章：{profile.bookTitle}
+              </p>
+            )}
             <p className="text-lg leading-relaxed text-slate-700 font-medium">
               {profile.core}
             </p>
+            {profile.bookInsight && (
+              <p className="mt-5 text-sm font-bold leading-relaxed border-l-4 border-[#B22222] pl-4">
+                書本洞見：{profile.bookInsight}
+              </p>
+            )}
           </section>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

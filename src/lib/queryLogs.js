@@ -11,6 +11,7 @@ export function reduce(n) {
 export function computeLifeCode(birthDate) {
   if (!birthDate) return null;
   const [year, month, day] = birthDate.split('-');
+  if (!year || !month || !day || year.length !== 4) return null;
   const A = parseInt(day[0], 10) || 0;
   const B = parseInt(day[1], 10) || 0;
   const C = parseInt(month[0], 10) || 0;
@@ -61,6 +62,34 @@ export function computeLifeCode(birthDate) {
     archetype: numberProfiles[O]?.archetype || '',
     ideology: numberProfiles[O]?.ideology || '',
   };
+}
+
+const MIN_DOB = '1900-01-01';
+
+export function validateBirthDate(dob, today = new Date()) {
+  if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+    return { ok: false, message: '請選擇有效的陽曆生日。' };
+  }
+  const [y, m, d] = dob.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  if (
+    date.getFullYear() !== y ||
+    date.getMonth() !== m - 1 ||
+    date.getDate() !== d
+  ) {
+    return { ok: false, message: '生日日期不存在，請重新選擇。' };
+  }
+  if (dob < MIN_DOB) {
+    return { ok: false, message: '生日不能早於 1900-01-01。' };
+  }
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const todayStr = `${yyyy}-${mm}-${dd}`;
+  if (dob > todayStr) {
+    return { ok: false, message: '生日不能是未來日期。' };
+  }
+  return { ok: true, message: '' };
 }
 
 function readLocal() {
@@ -260,7 +289,7 @@ export function logsToCsv(logs = []) {
 export function buildSummaryReport(logs = []) {
   const stats = aggregateLogs(logs);
   const lines = [
-    '生命密碼查詢彙整報告',
+    '生命靈數查詢彙整報告',
     `產出時間：${new Date().toLocaleString('zh-TW')}`,
     '',
     `總查詢數：${stats.total}`,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeLifeCode, reduce } from './queryLogs';
+import { computeLifeCode, reduce, validateBirthDate } from './queryLogs';
 
 describe('reduce', () => {
   it('maps 0 to 5 by project rule', () => {
@@ -26,7 +26,6 @@ describe('computeLifeCode', () => {
   it('applies year 2000 0+0=5 rule', () => {
     const r = computeLifeCode('2000-01-01');
     expect(r).not.toBeNull();
-    // year digits 2,0,0,0 → K=reduce(2+0)=2, L=reduce(0+0)=5
     expect(r.K).toBe(2);
     expect(r.L).toBe(5);
     expect(r.O).toBeGreaterThanOrEqual(1);
@@ -39,5 +38,17 @@ describe('computeLifeCode', () => {
     expect(r.innerChar).toMatch(/^\d{3}$/);
     expect(r.guardingCode).toMatch(/^\d{3}$/);
     expect(r.careerCode).toMatch(/^\d{3}$/);
+  });
+});
+
+describe('validateBirthDate', () => {
+  it('rejects future dates', () => {
+    const r = validateBirthDate('2099-01-01', new Date('2026-08-12'));
+    expect(r.ok).toBe(false);
+  });
+
+  it('accepts valid past dates', () => {
+    const r = validateBirthDate('1990-08-12', new Date('2026-08-12'));
+    expect(r.ok).toBe(true);
   });
 });

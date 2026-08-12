@@ -7,5 +7,8 @@ dist
 .admin-credentials.local
 .vercel
 _pptx_extract
+_pdf_preview
+_tmp-read.pdf
+*.pdf
 firebase-debug.log
 *-debug.log

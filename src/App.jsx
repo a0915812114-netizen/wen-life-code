@@ -6,7 +6,11 @@ import {
   User,
   ShieldCheck,
   BookOpen,
+  HeartHandshake,
+  HelpCircle,
+  Triangle,
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import {
   signInWithEmailAndPassword,
   signOut,
@@ -34,6 +38,7 @@ import {
   mergeLogs,
   saveLocalLog,
   toLogDocId,
+  validateBirthDate,
 } from './lib/queryLogs';
 import {
   firebaseReady,
@@ -44,10 +49,19 @@ import {
   isAdminUser,
   getTodayString,
 } from './lib/firebase';
+import { buildShareUrl, navigate, readRoute } from './lib/routing';
+import { ENABLE_DUO } from './lib/features';
 import AdminDashboard from './components/AdminDashboard';
 import AdminLogin from './components/AdminLogin';
 import LifeCodeResult from './components/LifeCodeResult';
 import NumberAtlas from './components/NumberAtlas';
+import DuoCompare from './components/DuoCompare';
+import {
+  NineQuestionsPage,
+  TriangleGuidePage,
+} from './components/LifeGuidePages';
+
+const MIN_DOB = '1900-01-01';
 
 const App = () => {
   const todayStr = getTodayString();
@@ -55,7 +69,7 @@ const App = () => {
   const [userName, setUserName] = useState('');
   const [tempBirthDate, setTempBirthDate] = useState(todayStr);
   const [tempUserName, setTempUserName] = useState('');
-  const [view, setView] = useState('user');
+  const [view, setView] = useState(() => readRoute().view);
   const [adminEmail, setAdminEmail] = useState(DEFAULT_ADMIN_EMAIL);
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -69,12 +83,17 @@ const App = () => {
   const [cloudSaveNotice, setCloudSaveNotice] = useState('');
   const [cloudSyncError, setCloudSyncError] = useState('');
   const [exportNotice, setExportNotice] = useState('');
-  const [html2canvasReady, setHtml2canvasReady] = useState(
-    () => typeof window !== 'undefined' && typeof window.html2canvas !== 'undefined',
-  );
+  const [dateError, setDateError] = useState('');
+  const [shareNotice, setShareNotice] = useState('');
 
   const resultRef = useRef(null);
   const lastLoggedRef = useRef(null);
+  const autoOpenedRef = useRef(false);
+
+  const go = (path, nextView) => {
+    navigate(path);
+    setView(nextView);
+  };
 
   const refreshLocalLogs = () => {
     const local = loadLocalLogs().map((item) => ({
@@ -85,94 +104,113 @@ const App = () => {
   };
 
   useEffect(() => {
-    if (typeof window.html2canvas !== 'undefined') {
-      setHtml2canvasReady(true);
-    }
-
-    const script = document.createElement('script');
-    script.src =
-      'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    script.async = true;
-    script.onload = () => setHtml2canvasReady(true);
-    script.onerror = () => setHtml2canvasReady(false);
-    document.body.appendChild(script);
-
-    if (!firebaseReady || !auth) {
-      return () => {
-        if (document.body.contains(script)) document.body.removeChild(script);
-      };
-    }
-
+    if (!firebaseReady || !auth) return undefined;
     const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const applyRoute = () => {
+      const route = readRoute();
+      setView(route.view);
+      if (route.view === 'user' && route.autoOpen && route.dob && !autoOpenedRef.current) {
+        const check = validateBirthDate(route.dob);
+        if (check.ok) {
+          autoOpenedRef.current = true;
+          setTempBirthDate(route.dob);
+          setTempUserName(route.name || '');
+          setBirthDate(route.dob);
+          setUserName(route.name || '');
+          setHasConfirmed(true);
+          setDateError('');
+        } else {
+          setDateError(check.message);
+        }
+      }
+    };
+    applyRoute();
+    window.addEventListener('popstate', applyRoute);
+    window.addEventListener('app:route', applyRoute);
     return () => {
-      unsubscribe();
-      if (document.body.contains(script)) document.body.removeChild(script);
+      window.removeEventListener('popstate', applyRoute);
+      window.removeEventListener('app:route', applyRoute);
     };
   }, []);
 
   const r = useMemo(() => computeLifeCode(birthDate), [birthDate]);
-
   const profile = r ? numberProfiles[r.O] : null;
   const ideology = profile ? ideologyGuide[profile.ideology] : null;
 
+  useEffect(() => {
+    if (!hasConfirmed || !r || !resultRef.current) return;
+    const timer = window.setTimeout(() => {
+      resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [hasConfirmed, r, birthDate, userName]);
+
+  const persistLog = async (name, dob, result) => {
+    const logKey = `${name || '未填寫'}-${dob}-${result.O}`;
+    if (lastLoggedRef.current === logKey) return;
+    lastLoggedRef.current = logKey;
+    const entry = buildLogEntry({ name, dob, result });
+    saveLocalLog(entry);
+    refreshLocalLogs();
+
+    if (firebaseReady && db) {
+      try {
+        const docId = toLogDocId(entry.dedupeKey);
+        await setDoc(
+          doc(db, 'artifacts', appId, 'public', 'data', 'analysis_logs', docId),
+          {
+            timestamp: serverTimestamp(),
+            createdAt: entry.createdAt,
+            dedupeKey: entry.dedupeKey,
+            name: entry.name.slice(0, 40),
+            dob: entry.dob,
+            mainChar: Number(entry.mainChar),
+            archetype: String(entry.archetype || '').slice(0, 20),
+            ideology: String(entry.ideology || '').slice(0, 20),
+            outerChar: String(entry.outerChar || '').slice(0, 12),
+            innerChar: String(entry.innerChar || '').slice(0, 12),
+            guardingCode: String(entry.guardingCode || '').slice(0, 12),
+            careerCode: String(entry.careerCode || '').slice(0, 12),
+            outerHeartType: String(entry.outerHeartType || '').slice(0, 20),
+            motivation: Number(entry.motivation),
+            energy: Number(entry.energy),
+          },
+          { merge: true },
+        );
+      } catch (err) {
+        console.error('雲端紀錄失敗:', err);
+        setCloudSaveNotice('本機已儲存；雲端同步失敗，請稍後再試。');
+      }
+    }
+  };
+
   const handleConfirm = async () => {
-    setIsConfirming(true);
     setCloudSaveNotice('');
+    setShareNotice('');
+    const check = validateBirthDate(tempBirthDate);
+    if (!check.ok) {
+      setDateError(check.message);
+      setHasConfirmed(false);
+      return;
+    }
+    setDateError('');
+    setIsConfirming(true);
     setBirthDate(tempBirthDate);
     setUserName(tempUserName);
     setHasConfirmed(true);
 
     const result = computeLifeCode(tempBirthDate);
     if (result) {
-      const logKey = `${tempUserName || '未填寫'}-${tempBirthDate}-${result.O}`;
-      if (lastLoggedRef.current !== logKey) {
-        lastLoggedRef.current = logKey;
-        const entry = buildLogEntry({
-          name: tempUserName,
-          dob: tempBirthDate,
-          result,
-        });
-        saveLocalLog(entry);
-        refreshLocalLogs();
-
-        if (firebaseReady && db) {
-          try {
-            const docId = toLogDocId(entry.dedupeKey);
-            await setDoc(
-              doc(
-                db,
-                'artifacts',
-                appId,
-                'public',
-                'data',
-                'analysis_logs',
-                docId,
-              ),
-              {
-                timestamp: serverTimestamp(),
-                createdAt: entry.createdAt,
-                dedupeKey: entry.dedupeKey,
-                name: entry.name.slice(0, 40),
-                dob: entry.dob,
-                mainChar: Number(entry.mainChar),
-                archetype: String(entry.archetype || '').slice(0, 20),
-                ideology: String(entry.ideology || '').slice(0, 20),
-                outerChar: String(entry.outerChar || '').slice(0, 12),
-                innerChar: String(entry.innerChar || '').slice(0, 12),
-                guardingCode: String(entry.guardingCode || '').slice(0, 12),
-                careerCode: String(entry.careerCode || '').slice(0, 12),
-                outerHeartType: String(entry.outerHeartType || '').slice(0, 20),
-                motivation: Number(entry.motivation),
-                energy: Number(entry.energy),
-              },
-              { merge: true },
-            );
-          } catch (err) {
-            console.error('雲端紀錄失敗:', err);
-            setCloudSaveNotice('本機已儲存；雲端同步失敗，請稍後再試。');
-          }
-        }
-      }
+      await persistLog(tempUserName, tempBirthDate, result);
+      const sharePath = buildShareUrl({
+        name: tempUserName,
+        dob: tempBirthDate,
+      });
+      navigate(`${sharePath.pathname}${sharePath.search}`);
     }
 
     setTimeout(() => setIsConfirming(false), 800);
@@ -181,19 +219,11 @@ const App = () => {
   const downloadImage = async () => {
     if (!resultRef.current) return;
     setExportNotice('');
-    if (typeof window.html2canvas === 'undefined') {
-      setExportNotice(
-        html2canvasReady
-          ? '下載工具異常，請重新整理頁面後再試。'
-          : '下載工具載入中，請稍候再試。',
-      );
-      return;
-    }
     setIsExporting(true);
     try {
-      const canvas = await window.html2canvas(resultRef.current, {
+      const canvas = await html2canvas(resultRef.current, {
         scale: 2,
-        backgroundColor: '#FDFCF8',
+        backgroundColor: '#F3EEE4',
         useCORS: true,
         logging: false,
       });
@@ -207,6 +237,33 @@ const App = () => {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const copyShareLink = async () => {
+    const url = buildShareUrl({ name: userName, dob: birthDate }).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareNotice('分享連結已複製。');
+    } catch {
+      setShareNotice(url);
+    }
+  };
+
+  const shareResult = async () => {
+    const url = buildShareUrl({ name: userName, dob: birthDate }).href;
+    const title = userName ? `「${userName}」的生命靈數` : '生命靈數解析';
+    const text = profile
+      ? `${title}：${r?.O} 號 ${profile.archetype}`
+      : title;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text, url });
+        return;
+      } catch {
+        // fall through to copy
+      }
+    }
+    await copyShareLink();
   };
 
   useEffect(() => {
@@ -298,11 +355,11 @@ const App = () => {
   };
 
   const handleAdminBack = async () => {
-    setView('user');
     setAdminPassword('');
     setLoginError('');
     setCloudLogs([]);
     setCloudSyncError('');
+    go('/', 'user');
     if (auth?.currentUser) {
       try {
         await signOut(auth);
@@ -322,11 +379,7 @@ const App = () => {
         loginError={loginError}
         loginLoading={loginLoading}
         onSubmit={handleAdminAuth}
-        onBack={() => {
-          setView('user');
-          setLoginError('');
-          setAdminPassword('');
-        }}
+        onBack={() => go('/', 'user')}
       />
     );
 
@@ -344,7 +397,27 @@ const App = () => {
     );
 
   if (view === 'atlas')
-    return <NumberAtlas onBack={() => setView('user')} />;
+    return <NumberAtlas onBack={() => go('/', 'user')} />;
+
+  if (view === 'duo' && ENABLE_DUO) {
+    return <DuoCompare onBack={() => go('/', 'user')} />;
+  }
+
+  if (view === 'triangle')
+    return (
+      <TriangleGuidePage
+        onBack={() => go('/', 'user')}
+        onOpenNine={() => go('/nine', 'nine')}
+      />
+    );
+
+  if (view === 'nine')
+    return (
+      <NineQuestionsPage
+        onBack={() => go('/', 'user')}
+        onOpenTriangle={() => go('/triangle', 'triangle')}
+      />
+    );
 
   return (
     <div className="min-h-screen ink-paper flex flex-col items-center px-4 md:px-8 relative overflow-hidden font-serif text-[color:var(--ink)]">
@@ -360,17 +433,50 @@ const App = () => {
                   悟
                 </span>
               </div>
-              <p className="anim-rise text-[color:var(--ink-soft)] text-sm md:text-base tracking-[0.35em] font-bold mb-10">
+              <p className="anim-rise text-[color:var(--ink-soft)] text-sm md:text-base tracking-[0.35em] font-bold mb-8">
                 天賦人格研究院 · 一卷解讀命數
               </p>
-              <button
-                type="button"
-                onClick={() => setView('atlas')}
-                className="anim-rise mb-10 inline-flex items-center gap-2 text-sm font-bold tracking-[0.2em] text-[color:var(--cinnabar)] hover:opacity-80 transition-opacity"
-              >
-                <BookOpen size={16} />
-                瀏覽 1–9 號人格圖鑑
-              </button>
+              <div className="anim-rise mb-10 flex flex-wrap items-center justify-center gap-3 md:gap-4">
+                <button
+                  type="button"
+                  onClick={() => go('/atlas', 'atlas')}
+                  className="inline-flex items-center gap-2 text-sm font-bold tracking-[0.15em] text-[color:var(--cinnabar)] hover:opacity-80 transition-opacity"
+                >
+                  <BookOpen size={16} />
+                  人格圖鑑
+                </button>
+                <span className="text-[color:var(--ink-soft)]/40">｜</span>
+                <button
+                  type="button"
+                  onClick={() => go('/triangle', 'triangle')}
+                  className="inline-flex items-center gap-2 text-sm font-bold tracking-[0.15em] text-[color:var(--cinnabar)] hover:opacity-80 transition-opacity"
+                >
+                  <Triangle size={16} />
+                  三角形內外
+                </button>
+                <span className="text-[color:var(--ink-soft)]/40">｜</span>
+                <button
+                  type="button"
+                  onClick={() => go('/nine', 'nine')}
+                  className="inline-flex items-center gap-2 text-sm font-bold tracking-[0.15em] text-[color:var(--cinnabar)] hover:opacity-80 transition-opacity"
+                >
+                  <HelpCircle size={16} />
+                  九問解密
+                </button>
+                {ENABLE_DUO && (
+                  <>
+                    <span className="text-[color:var(--ink-soft)]/40">｜</span>
+                    <button
+                      type="button"
+                      onClick={() => go('/duo', 'duo')}
+                      className="inline-flex items-center gap-2 text-sm font-bold tracking-[0.15em] text-[color:var(--cinnabar)] hover:opacity-80 transition-opacity"
+                    >
+                      <HeartHandshake size={16} />
+                      雙人合盤
+                    </button>
+                  </>
+                )}
+              </div>
 
               <div className="anim-rise grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-8 md:gap-10 items-end text-left">
                 <label className="block w-full">
@@ -397,8 +503,13 @@ const App = () => {
                     <Calendar size={20} className="text-[color:var(--cinnabar)] shrink-0" />
                     <input
                       type="date"
+                      min={MIN_DOB}
+                      max={todayStr}
                       value={tempBirthDate}
-                      onChange={(e) => setTempBirthDate(e.target.value)}
+                      onChange={(e) => {
+                        setTempBirthDate(e.target.value);
+                        setDateError('');
+                      }}
                       className="bg-transparent text-xl md:text-2xl font-bold outline-none w-full tracking-tight cursor-pointer"
                     />
                   </div>
@@ -436,7 +547,11 @@ const App = () => {
                       setHasConfirmed(false);
                       setCloudSaveNotice('');
                       setExportNotice('');
+                      setShareNotice('');
+                      setDateError('');
                       lastLoggedRef.current = null;
+                      autoOpenedRef.current = false;
+                      go('/', 'user');
                     }}
                     className="p-3 text-[color:var(--ink-soft)] hover:text-[color:var(--ink)] border border-transparent hover:border-[color:var(--ink)]/20 rounded-sm transition-all"
                   >
@@ -445,9 +560,14 @@ const App = () => {
                 </div>
               </div>
 
-              {(cloudSaveNotice || exportNotice) && (
-                <div className="mt-8 text-sm font-bold text-[color:var(--cinnabar-deep)] bg-[rgba(178,34,34,0.08)] border border-[rgba(178,34,34,0.25)] px-4 py-3">
-                  {cloudSaveNotice || exportNotice}
+              {dateError && (
+                <div className="mt-6 text-sm font-bold text-[color:var(--cinnabar-deep)]">
+                  {dateError}
+                </div>
+              )}
+              {(cloudSaveNotice || exportNotice || shareNotice) && (
+                <div className="mt-6 text-sm font-bold text-[color:var(--cinnabar-deep)] bg-[rgba(178,34,34,0.08)] border border-[rgba(178,34,34,0.25)] px-4 py-3 break-all">
+                  {cloudSaveNotice || exportNotice || shareNotice}
                 </div>
               )}
             </div>
@@ -469,9 +589,11 @@ const App = () => {
             profile={profile}
             ideology={ideology}
             isExporting={isExporting}
-            html2canvasReady={html2canvasReady}
             exportNotice={exportNotice}
+            shareNotice={shareNotice}
             onDownload={downloadImage}
+            onShare={shareResult}
+            onCopyLink={copyShareLink}
           />
         )}
 
@@ -483,7 +605,7 @@ const App = () => {
               {!isExporting && (
                 <button
                   type="button"
-                  onClick={() => setView('login')}
+                  onClick={() => go('/login', 'login')}
                   title="後台入口"
                   className="absolute left-1/2 top-full mt-3 -translate-x-1/2 text-[color:var(--ink-soft)] hover:text-[color:var(--cinnabar)] transition-all p-2"
                 >

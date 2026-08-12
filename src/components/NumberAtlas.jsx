@@ -71,7 +71,7 @@ export default function NumberAtlas({ onBack }) {
                     >
                       {n}
                     </span>
-                    <span className="text-[11px] md:text-xs font-bold tracking-widest text-[color:var(--ink-soft)]">
+                    <span className="text-[11px] md:text-xs font-bold tracking-widest text-[color:var(--ink-soft)] text-center leading-snug">
                       {item.archetype}
                     </span>
                   </button>
@@ -95,6 +95,11 @@ export default function NumberAtlas({ onBack }) {
                     <h2 className="brand-mark text-3xl md:text-5xl">
                       {selected} 號人 · {profile.archetype}
                     </h2>
+                    {profile.bookTitle && (
+                      <p className="mt-2 text-sm font-bold tracking-widest text-[color:var(--cinnabar)]">
+                        書中篇章：{profile.bookTitle}
+                      </p>
+                    )}
                   </div>
                   <p className="text-[color:var(--ink-soft)] font-bold italic max-w-xl">
                     {profile.quote}
@@ -125,6 +130,11 @@ export default function NumberAtlas({ onBack }) {
                   <p className="text-lg leading-relaxed text-[color:var(--ink-soft)] font-medium">
                     {profile.core}
                   </p>
+                  {profile.bookInsight && (
+                    <p className="mt-5 text-sm font-bold leading-relaxed border-l-4 border-[color:var(--cinnabar)] pl-4 text-[color:var(--ink)]">
+                      書本洞見：{profile.bookInsight}
+                    </p>
+                  )}
                 </section>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
